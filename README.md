@@ -140,10 +140,19 @@ set DB_USER=root
 set DB_PASSWORD=your_password
 ```
 
-或直接配置：
-
 ```bash
 set DATABASE_URL=mysql+pymysql://user:password@host:3306/mark_six?charset=utf8mb4
+```
+
+或使用 **Turso (libSQL 分布式数据库)**（推荐用于 Render、Railway 等平台）：
+
+```bash
+# 方式一：直接配置 DATABASE_URL（支持 libsql:// 或 sqlite+libsql://）
+set DATABASE_URL=libsql://your-database-name-your-org.turso.io?authToken=your_token
+
+# 方式二：分别配置 URL 和 Token
+set TURSO_DATABASE_URL=libsql://your-database-name-your-org.turso.io
+set TURSO_AUTH_TOKEN=your_token
 ```
 
 更新已有数据库结构：

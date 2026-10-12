@@ -990,7 +990,15 @@ MYSQL_COLLATION = os.environ.get("MYSQL_COLLATION", "utf8mb4_unicode_ci")
 def _build_database_uri(db_path):
     db_url = os.environ.get("DATABASE_URL")
     if db_url:
+        if db_url.startswith("libsql://"):
+            return "sqlite+" + db_url
         return db_url
+
+    turso_url = os.environ.get("TURSO_DATABASE_URL")
+    turso_token = os.environ.get("TURSO_AUTH_TOKEN")
+    if turso_url and turso_token:
+        clean_url = turso_url.replace("libsql://", "").replace("https://", "").rstrip("/")
+        return f"sqlite+libsql://{clean_url}?authToken={turso_token}"
 
     db_type = os.environ.get("DB_TYPE", "sqlite").lower()
     if db_type in ("mysql", "mariadb"):
@@ -1038,7 +1046,9 @@ def _install_mysql_connection_collation_hook():
             cursor.close()
 
 def _mask_db_uri(uri):
-    return re.sub(r'//([^:/@]+):([^@]+)@', r'//\1:***@', uri)
+    masked = re.sub(r'//([^:/@]+):([^@]+)@', r'//\1:***@', uri)
+    masked = re.sub(r'authToken=[^&]+', 'authToken=***', masked)
+    return masked
 
 
 def _ensure_mysql_database_exists(database_uri):
@@ -1090,6 +1100,9 @@ def _describe_database_target(database_uri):
     backend = (url.get_backend_name() or "").lower()
     database_name = str(url.database or "").strip()
 
+    if "libsql" in str(getattr(url, "drivername", "")).lower() or "libsql" in database_uri.lower():
+        target = database_name or str(getattr(url, "host", "") or "")
+        return "Turso (libSQL)", target
     if backend in ("mysql", "mariadb"):
         return "MySQL", database_name
     if backend == "sqlite":

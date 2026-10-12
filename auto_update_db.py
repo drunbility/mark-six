@@ -27,6 +27,13 @@ def _using_mysql():
     return DATABASE_URL.lower().startswith("mysql")
 
 
+def _using_turso():
+    if DB_TYPE in ("turso", "libsql"):
+        return True
+    db_url = DATABASE_URL.lower()
+    return "libsql" in db_url or bool(os.environ.get("TURSO_DATABASE_URL"))
+
+
 def _build_mysql_database_uri():
     if DATABASE_URL:
         return DATABASE_URL
@@ -286,6 +293,9 @@ def update_database():
     """更新数据库结构和数据"""
     if _using_mysql():
         return _update_mysql_database()
+    if _using_turso():
+        print("检测到 Turso (libSQL) 远程数据库，表结构由应用启动时通过 SQLAlchemy 自动创建与维护。")
+        return True
     if not check_database_exists():
         print(f"数据库文件不存在: {DB_PATH}")
         print("请先运行 create_db.py 创建数据库")

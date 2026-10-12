@@ -37,8 +37,8 @@ if DB_TYPE in ("mysql", "mariadb") or DATABASE_URL.lower().startswith("mysql"):
         print(f"MySQL/MariaDB 数据库结构更新失败: {e}")
         sys.exit(1)
 
-if False and (DB_TYPE in ("mysql", "mariadb") or DATABASE_URL.lower().startswith("mysql")):
-    print("⚠ 检测到 MySQL/MariaDB 配置，跳过 SQLite 数据库创建。")
+if DB_TYPE in ("turso", "libsql") or "libsql" in DATABASE_URL.lower() or os.environ.get("TURSO_DATABASE_URL"):
+    print("检测到 Turso (libSQL) 配置，表结构将在应用启动时由 SQLAlchemy 自动创建。")
     sys.exit(0)
 
 

@@ -991,14 +991,17 @@ def _build_database_uri(db_path):
     db_url = os.environ.get("DATABASE_URL")
     if db_url:
         if db_url.startswith("libsql://"):
-            return "sqlite+" + db_url
+            db_url = "sqlite+" + db_url
+        if "libsql" in db_url and "secure=" not in db_url:
+            delimiter = "&" if "?" in db_url else "?"
+            db_url = f"{db_url}{delimiter}secure=true"
         return db_url
 
     turso_url = os.environ.get("TURSO_DATABASE_URL")
     turso_token = os.environ.get("TURSO_AUTH_TOKEN")
     if turso_url and turso_token:
         clean_url = turso_url.replace("libsql://", "").replace("https://", "").rstrip("/")
-        return f"sqlite+libsql://{clean_url}?authToken={turso_token}"
+        return f"sqlite+libsql://{clean_url}?authToken={turso_token}&secure=true"
 
     db_type = os.environ.get("DB_TYPE", "sqlite").lower()
     if db_type in ("mysql", "mariadb"):

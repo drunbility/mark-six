@@ -14,7 +14,7 @@ import hmac
 from contextlib import contextmanager
 from collections import Counter
 import re
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus, urlparse, parse_qs
 from datetime import datetime, timedelta
 import time
 from markupsafe import escape
@@ -992,13 +992,17 @@ def _build_database_uri(db_path):
     if db_url:
         if db_url.startswith("libsql://"):
             db_url = "sqlite+" + db_url
+        turso_token = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
+        if turso_token and "authToken=" not in db_url and "auth_token=" not in db_url:
+            delimiter = "&" if "?" in db_url else "?"
+            db_url = f"{db_url}{delimiter}authToken={turso_token}"
         if "libsql" in db_url and "secure=" not in db_url:
             delimiter = "&" if "?" in db_url else "?"
             db_url = f"{db_url}{delimiter}secure=true"
         return db_url
 
     turso_url = os.environ.get("TURSO_DATABASE_URL")
-    turso_token = os.environ.get("TURSO_AUTH_TOKEN")
+    turso_token = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
     if turso_url and turso_token:
         clean_url = turso_url.replace("libsql://", "").replace("https://", "").rstrip("/")
         return f"sqlite+libsql://{clean_url}?authToken={turso_token}&secure=true"
@@ -1028,6 +1032,17 @@ def _build_engine_options(database_uri):
         options["connect_args"] = {
             "init_command": f"SET NAMES {MYSQL_CHARSET} COLLATE {MYSQL_COLLATION}",
         }
+    elif "libsql" in database_uri.lower():
+        token = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
+        if not token:
+            try:
+                parsed = urlparse(database_uri)
+                qs = parse_qs(parsed.query)
+                token = (qs.get("authToken") or qs.get("auth_token") or [""])[0].strip()
+            except Exception:
+                pass
+        if token:
+            options.setdefault("connect_args", {})["auth_token"] = token
     return options
 
 
@@ -1903,6 +1918,11 @@ if _should_log_startup():
     print(f"Database backend: {db_kind}{f' ({db_target})' if db_target else ''}")
     print(f"数据库路径: {db_path}")
     print(f"数据库URI: {_mask_db_uri(app.config['SQLALCHEMY_DATABASE_URI'])}")
+    if "libsql" in app.config['SQLALCHEMY_DATABASE_URI'].lower():
+        opts = app.config.get('SQLALCHEMY_ENGINE_OPTIONS') or {}
+        has_token = bool((opts.get('connect_args') or {}).get('auth_token')) or ('authToken=' in app.config['SQLALCHEMY_DATABASE_URI'])
+        if not has_token:
+            print("⚠ 警告：未检测到 Turso Auth Token！请在 DATABASE_URL 中附加 ?authToken=<token> 或设置 TURSO_AUTH_TOKEN 环境变量")
 
 # 初始化数据库
 # 初始化数据库

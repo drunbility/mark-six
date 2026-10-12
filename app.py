@@ -14,7 +14,7 @@ import hmac
 from contextlib import contextmanager
 from collections import Counter
 import re
-from urllib.parse import quote_plus, urlparse, parse_qs
+from urllib.parse import quote_plus, urlparse, parse_qs, urlencode, urlunparse
 from datetime import datetime, timedelta
 import time
 from markupsafe import escape
@@ -987,25 +987,48 @@ MYSQL_CHARSET = "utf8mb4"
 MYSQL_COLLATION = os.environ.get("MYSQL_COLLATION", "utf8mb4_unicode_ci")
 
 
+def _clean_turso_database_uri(db_url):
+    """清理 Turso 连接串中的 query 参数，将 authToken 提取并存入环境变量，避免污染 Hrana HTTP 路由。"""
+    if not db_url:
+        return db_url
+    if db_url.startswith("libsql://"):
+        db_url = "sqlite+" + db_url
+    if "libsql" not in db_url.lower():
+        return db_url
+
+    try:
+        parsed = urlparse(db_url)
+        qs = parse_qs(parsed.query, keep_blank_values=True)
+        token_list = qs.pop("authToken", None) or qs.pop("auth_token", None)
+        if token_list and token_list[0].strip():
+            os.environ["TURSO_AUTH_TOKEN"] = token_list[0].strip()
+        qs["secure"] = ["true"]
+        clean_query = urlencode(qs, doseq=True)
+        clean_path = parsed.path if parsed.path else "/"
+        return urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            clean_path,
+            parsed.params,
+            clean_query,
+            parsed.fragment
+        ))
+    except Exception:
+        return db_url
+
+
 def _build_database_uri(db_path):
     db_url = os.environ.get("DATABASE_URL")
     if db_url:
-        if db_url.startswith("libsql://"):
-            db_url = "sqlite+" + db_url
-        turso_token = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
-        if turso_token and "authToken=" not in db_url and "auth_token=" not in db_url:
-            delimiter = "&" if "?" in db_url else "?"
-            db_url = f"{db_url}{delimiter}authToken={turso_token}"
-        if "libsql" in db_url and "secure=" not in db_url:
-            delimiter = "&" if "?" in db_url else "?"
-            db_url = f"{db_url}{delimiter}secure=true"
+        if "libsql" in db_url.lower():
+            return _clean_turso_database_uri(db_url)
         return db_url
 
     turso_url = os.environ.get("TURSO_DATABASE_URL")
     turso_token = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
     if turso_url and turso_token:
         clean_url = turso_url.replace("libsql://", "").replace("https://", "").rstrip("/")
-        return f"sqlite+libsql://{clean_url}?authToken={turso_token}&secure=true"
+        return f"sqlite+libsql://{clean_url}/?secure=true"
 
     db_type = os.environ.get("DB_TYPE", "sqlite").lower()
     if db_type in ("mysql", "mariadb"):

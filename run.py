@@ -36,9 +36,10 @@ def main():
         
         # 启动Flask应用
         debug_enabled = os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true", "yes")
+        port = int(os.environ.get("PORT", 5000))
         app.run(
             host='0.0.0.0',
-            port=5000,
+            port=port,
             debug=debug_enabled,
             use_reloader=False  # 避免重复初始化
         )

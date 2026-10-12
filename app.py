@@ -1926,43 +1926,51 @@ def _quote_identifier(name):
 
 
 def _deduplicate_prediction_records():
-    duplicate_groups = (
-        db.session.query(
-            PredictionRecord.user_id,
-            PredictionRecord.region,
-            PredictionRecord.period,
-            PredictionRecord.strategy,
-        )
-        .group_by(
-            PredictionRecord.user_id,
-            PredictionRecord.region,
-            PredictionRecord.period,
-            PredictionRecord.strategy,
-        )
-        .having(db.func.count(PredictionRecord.id) > 1)
-        .all()
-    )
-
-    removed_count = 0
-    for user_id, region, period, strategy in duplicate_groups:
-        duplicates = (
-            PredictionRecord.query.filter_by(
-                user_id=user_id,
-                region=region,
-                period=period,
-                strategy=strategy,
+    try:
+        duplicate_groups = (
+            db.session.query(
+                PredictionRecord.user_id,
+                PredictionRecord.region,
+                PredictionRecord.period,
+                PredictionRecord.strategy,
             )
-            .order_by(PredictionRecord.id.desc())
+            .group_by(
+                PredictionRecord.user_id,
+                PredictionRecord.region,
+                PredictionRecord.period,
+                PredictionRecord.strategy,
+            )
+            .having(db.func.count(PredictionRecord.id) > 1)
             .all()
         )
-        for stale_row in duplicates[1:]:
-            db.session.delete(stale_row)
-            removed_count += 1
 
-    if removed_count:
-        db.session.commit()
-        if _should_log_startup():
-            print(f"Removed {removed_count} duplicate prediction_record rows")
+        removed_count = 0
+        for user_id, region, period, strategy in duplicate_groups:
+            duplicates = (
+                PredictionRecord.query.filter_by(
+                    user_id=user_id,
+                    region=region,
+                    period=period,
+                    strategy=strategy,
+                )
+                .order_by(PredictionRecord.id.desc())
+                .all()
+            )
+            for stale_row in duplicates[1:]:
+                db.session.delete(stale_row)
+                removed_count += 1
+
+        if removed_count:
+            db.session.commit()
+            if _should_log_startup():
+                print(f"Removed {removed_count} duplicate prediction_record rows")
+        else:
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    finally:
+        db.session.remove()
 
 
 def _sync_mysql_collation(existing_tables):
@@ -2217,17 +2225,23 @@ def ensure_runtime_database_schema():
             db.create_all()
         except Exception as e:
             print(f"创建数据库表时出错: {e}")
+        finally:
+            db.session.remove()
 
         try:
             _sync_runtime_database_schema()
         except Exception as e:
             print(f"Runtime schema sync failed: {e}")
+        finally:
+            db.session.remove()
 
         try:
             from auto_update_db import check_and_update_database
             check_and_update_database()
         except Exception as e:
             print(f"运行时自动更新数据库结构时出错: {e}")
+        finally:
+            db.session.remove()
 
 with _startup_schema_lock():
     ensure_runtime_database_schema()
@@ -2249,6 +2263,8 @@ def cleanup_legacy_smart_strategy():
         except Exception as e:
             db.session.rollback()
             print(f"Failed to clean legacy smart strategies: {e}")
+        finally:
+            db.session.remove()
 
 cleanup_legacy_smart_strategy()
 
